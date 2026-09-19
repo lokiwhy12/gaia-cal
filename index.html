@@ -166,16 +166,22 @@
     return lines.join("\r\n");
   }
 
+  // iOS: a direct https URL ending in .ics is treated as a calendar *subscription*
+  // feed (Add Subscription), not Add Event — MIME does not matter. Serve calendar
+  // bytes from a non-.ics path on Vercel instead (/add/<slug>).
   const apple = $("apple");
   if (icsPath) {
-    // jsDelivr mirrors this repo and serves .ics as text/calendar (GH Pages often 404s
-    // briefly and may not set calendar MIME). Repo stays under Loki control.
     const clean = icsPath.replace(/^\/+/, "");
-    apple.href = "https://cdn.jsdelivr.net/gh/lokiwhy12/gaia-cal@main/" + clean;
+    const slug = clean.replace(/^e\//, "").replace(/\.ics$/i, "");
+    apple.href = "https://gaia-cal.vercel.app/add/" + encodeURIComponent(slug);
   } else {
     // data: URI — Safari Add Event path when no hosted file yet.
     apple.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(buildIcs());
   }
+
+  // Google: bounce through our HTML page so the user taps in Safari (UL into the
+  // GCal app from Messages often opens an empty template even with UTC Z dates).
+  $("google").href = "https://gaia-cal.vercel.app/api/google?u=" + encodeURIComponent(g.toString());
 
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
