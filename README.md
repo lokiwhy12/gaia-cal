@@ -1,37 +1,25 @@
 # gaia-cal
 
-One-tap **Add Event** landing for #gaia lock-ins.
+Add Event landing for #gaia lock-ins (not Subscribe).
 
-Not a calendar subscription. Opens Google with a prefilled event, or downloads a one-shot `.ics` that iPhone Calendar treats as Add Event.
+## iOS notes
+- **Apple:** use hosted `.ics` (`?ics=e/….ics`) or the page’s `data:text/calendar` link. Blob downloads are flaky.
+- **Google:** TEMPLATE must use **UTC `Z` dates**. Floating local + `ctz` often opens empty in the Google Calendar **app** (Universal Links). Prefer Apple/.ics on iPhone if Google still opens empty.
 
-## URL pattern
-
+## URL
 ```
-https://lokiwhy12.github.io/gaia-cal/?title=TITLE&start=YYYY-MM-DDTHH:MM:SS&end=YYYY-MM-DDTHH:MM:SS&tz=America/Chicago
-```
-
-Optional: `location`, `details`.
-
-`start` / `end` are **local wall times** in `tz`. Do not append `Z`.
-
-## Example (Gaby Sunday lunch)
-
-Lunch with Loki · Sun Sep 20, 2026 · 12:00–1:00pm America/Chicago
-
-```
-https://lokiwhy12.github.io/gaia-cal/?title=Lunch%20with%20Loki&start=2026-09-20T12:00:00&end=2026-09-20T13:00:00&tz=America/Chicago
+https://lokiwhy12.github.io/gaia-cal/?title=TITLE&start=YYYY-MM-DDTHH:MM:SS&end=…&tz=America/Chicago&startUtc=…Z&endUtc=…Z&ics=e/slug.ics
 ```
 
-## Wake integration
+## Example
+```
+https://lokiwhy12.github.io/gaia-cal/?title=Lunch+with+Loki&start=2026-09-20T12:00:00&end=2026-09-20T13:00:00&tz=America/Chicago&startUtc=20260920T170000Z&endUtc=20260920T180000Z&ics=e/lunch-with-loki.ics
+```
 
-From gaia-imessage / GAIA wake, build the query string and send it as text via `send_gaia_imessage.py` (attachments stay broken; this is the product path).
-
+## Wake
 ```bash
 python3 ~/dev/gaia-imessage/make_calendar_share.py \
   --title "Lunch with Loki" \
-  --start "2026-09-20T12:00:00" \
-  --end "2026-09-20T13:00:00" \
-  --tz America/Chicago \
-  --chat-name "..." \
-  --send
+  --start 2026-09-20T12:00:00 --end 2026-09-20T13:00:00 \
+  --tz America/Chicago --write-ics --slug lunch-with-loki --push-ics --send --chat-id '…'
 ```

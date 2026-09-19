@@ -5,19 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Add to calendar</title>
 <style>
-  :root { color-scheme: light dark; --bg:#0b0c10; --ink:#f2f0eb; --muted:#9a968e; --card:#171920; --line:#2a2d36; --go:#3d8bfd; --apple:#e8e6e3; }
+  :root { color-scheme: light dark; --bg:#0b0c10; --ink:#f2f0eb; --muted:#9a968e; --card:#171920; --line:#2a2d36; --go:#3d8bfd; --apple:#e8e6e3; --warn:#f0c674; }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); display:flex; align-items:center; justify-content:center; padding:24px; }
   main { width:100%; max-width:420px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:28px 22px; }
   h1 { font-size:1.25rem; margin:0 0 6px; }
   .when { color:var(--muted); margin:0 0 8px; }
-  .where, .notes { color:var(--muted); font-size:0.95rem; margin:0 0 18px; white-space:pre-wrap; }
+  .where, .notes { color:var(--muted); font-size:0.95rem; margin:0 0 12px; white-space:pre-wrap; }
   .err { color:#ff7b72; margin:0 0 16px; }
-  .actions { display:grid; gap:10px; }
+  .actions { display:grid; gap:10px; margin-top:8px; }
   a.btn, button.btn { display:block; width:100%; text-align:center; text-decoration:none; border:0; border-radius:12px; padding:14px 16px; font:inherit; font-weight:600; cursor:pointer; }
+  a.primary, button.primary { background:var(--apple); color:#111; }
   a.google { background:var(--go); color:#fff; }
-  button.apple { background:var(--apple); color:#111; }
-  .hint { margin:14px 0 0; color:var(--muted); font-size:0.85rem; }
+  .hint, .warn { margin:14px 0 0; color:var(--muted); font-size:0.85rem; }
+  .warn { color:var(--warn); }
 </style>
 </head>
 <body>
@@ -28,18 +29,22 @@
   <p class="notes" id="notes" hidden></p>
   <p class="err" id="err" hidden></p>
   <div class="actions" id="actions" hidden>
+    <a class="btn primary" id="apple" href="#">Add to Apple Calendar</a>
     <a class="btn google" id="google" target="_blank" rel="noopener">Add to Google Calendar</a>
-    <button type="button" class="btn apple" id="apple">Add to Apple Calendar</button>
   </div>
-  <p class="hint" id="hint" hidden>Apple opens an Add Event sheet. Google opens a prefilled event you save. This is not a calendar subscription.</p>
+  <p class="hint" id="hint" hidden>Apple should open an Add Event sheet with the fields filled. Google should open a prefilled event to Save. This is not a calendar subscription.</p>
+  <p class="warn" id="iosWarn" hidden>On iPhone: if Google opens an empty calendar, use Add to Apple Calendar instead (or open this page in Safari, then Google). The Google app often drops event details from Messages links.</p>
 </main>
 <script>
 (function () {
   const params = new URLSearchParams(location.search);
   const title = (params.get("title") || "").trim();
-  const start = (params.get("start") || "").trim(); // local wall time ISO without Z, e.g. 2026-09-20T12:00:00
+  const start = (params.get("start") || "").trim();
   const end = (params.get("end") || "").trim();
   const tz = (params.get("tz") || "America/Chicago").trim();
+  const startUtc = (params.get("startUtc") || "").trim(); // 20260920T170000Z
+  const endUtc = (params.get("endUtc") || "").trim();
+  const icsPath = (params.get("ics") || "").trim(); // optional hosted file path e.g. e/lunch-with-loki.ics
   const locationText = (params.get("location") || "").trim();
   const details = (params.get("details") || "").trim();
 
@@ -54,7 +59,6 @@
     return;
   }
 
-  // Parse wall-clock local components. Do not treat as UTC.
   function parseLocal(iso) {
     const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
     if (!m) return null;
@@ -72,43 +76,66 @@
   }
 
   $("title").textContent = title;
-  try {
-    const fmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      weekday: "short", month: "short", day: "numeric", year: "numeric",
-      hour: "numeric", minute: "2-digit", timeZoneName: "short",
-    });
-    // Display using a Date constructed in that zone via ISO with offset omitted —
-    // for label only we show the wall strings the link already carries.
-    const pretty = (p) => {
-      const dt = new Date(Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi, p.s));
-      // Above is wrong for display; use manual:
-      return null;
-    };
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const pad = (n) => String(n).padStart(2, "0");
-    const ampm = (h, mi) => {
-      const ap = h >= 12 ? "PM" : "AM";
-      const hr = ((h + 11) % 12) + 1;
-      return hr + ":" + pad(mi) + " " + ap;
-    };
-    $("when").textContent =
-      months[s.mo - 1] + " " + s.d + ", " + s.y + " · " +
-      ampm(s.h, s.mi) + " – " + ampm(e.h, e.mi) + " " + tz.replace("_", " ");
-  } catch (_) {
-    $("when").textContent = start + " → " + end + " (" + tz + ")";
-  }
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const pad = (n) => String(n).padStart(2, "0");
+  const ampm = (h, mi) => {
+    const ap = h >= 12 ? "PM" : "AM";
+    const hr = ((h + 11) % 12) + 1;
+    return hr + ":" + pad(mi) + " " + ap;
+  };
+  $("when").textContent =
+    months[s.mo - 1] + " " + s.d + ", " + s.y + " · " +
+    ampm(s.h, s.mi) + " – " + ampm(e.h, e.mi) + " " + tz.replace("_", " ");
 
   if (locationText) { $("where").hidden = false; $("where").textContent = locationText; }
   if (details) { $("notes").hidden = false; $("notes").textContent = details; }
 
-  // Google TEMPLATE with ctz + floating local times (not Z). Empty-open failures
-  // usually came from bad dates= encoding.
+  // Convert local wall time in tz → UTC compact Z using the platform timezone DB.
+  function localToUtcCompact(p, timeZone) {
+    // Build a UTC instant that displays as p in timeZone via iterative offset probe.
+    const guess = Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi, p.s);
+    const dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hourCycle: "h23",
+    });
+    function parts(ms) {
+      const o = {};
+      for (const x of dtf.formatToParts(new Date(ms))) if (x.type !== "literal") o[x.type] = x.value;
+      return o;
+    }
+    function asUtcMs(o) {
+      return Date.UTC(+o.year, +o.month - 1, +o.day, +o.hour, +o.minute, +o.second);
+    }
+    // desire local = p; adjust guess by difference between desired and formatted
+    let ms = guess;
+    for (let i = 0; i < 3; i++) {
+      const got = parts(ms);
+      const gotMs = asUtcMs(got);
+      const wantMs = Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi, p.s);
+      ms += wantMs - gotMs;
+    }
+    const u = new Date(ms);
+    const y = u.getUTCFullYear();
+    const mo = pad(u.getUTCMonth() + 1);
+    const d = pad(u.getUTCDate());
+    const h = pad(u.getUTCHours());
+    const mi = pad(u.getUTCMinutes());
+    const sec = pad(u.getUTCSeconds());
+    return "" + y + mo + d + "T" + h + mi + sec + "Z";
+  }
+
+  const utcStart = /^(\d{8}T\d{6}Z)$/.test(startUtc) ? startUtc : localToUtcCompact(s, tz);
+  const utcEnd = /^(\d{8}T\d{6}Z)$/.test(endUtc) ? endUtc : localToUtcCompact(e, tz);
+
+  // Google: UTC Z dates on /calendar/render?action=TEMPLATE (no floating local).
+  // calendar.google.com Universal Links on iOS may still open the app empty; we
+  // also expose a hosted/data .ics as the reliable path.
   const g = new URL("https://calendar.google.com/calendar/render");
   g.searchParams.set("action", "TEMPLATE");
   g.searchParams.set("text", title);
-  g.searchParams.set("dates", s.compact + "/" + e.compact);
-  g.searchParams.set("ctz", tz);
+  g.searchParams.set("dates", utcStart + "/" + utcEnd);
   if (details) g.searchParams.set("details", details);
   if (locationText) g.searchParams.set("location", locationText);
   $("google").href = g.toString();
@@ -135,22 +162,22 @@
     ];
     if (details) lines.push("DESCRIPTION:" + icsEscape(details));
     if (locationText) lines.push("LOCATION:" + icsEscape(locationText));
-    lines.push("END:VEVENT", "END:VCALENDAR", "");
+    lines.push("END:VEVENT", "END:VCALENDAR");
     return lines.join("\r\n");
   }
 
-  $("apple").addEventListener("click", function () {
-    const ics = buildIcs();
-    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = (title.replace(/[^\w\-]+/g, "_").slice(0, 40) || "event") + ".ics";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
-  });
+  const apple = $("apple");
+  if (icsPath) {
+    // Hosted file under this Pages site (preferred on iOS).
+    apple.href = new URL(icsPath, location.href).toString();
+  } else {
+    // data: URI navigates Safari into Calendar Add Event more reliably than blob+download.
+    apple.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(buildIcs());
+  }
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (isIOS) $("iosWarn").hidden = false;
 
   $("actions").hidden = false;
   $("hint").hidden = false;
