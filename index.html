@@ -168,10 +168,12 @@
 
   const apple = $("apple");
   if (icsPath) {
-    // Hosted file under this Pages site (preferred on iOS).
-    apple.href = new URL(icsPath, location.href).toString();
+    // jsDelivr mirrors this repo and serves .ics as text/calendar (GH Pages often 404s
+    // briefly and may not set calendar MIME). Repo stays under Loki control.
+    const clean = icsPath.replace(/^\/+/, "");
+    apple.href = "https://cdn.jsdelivr.net/gh/lokiwhy12/gaia-cal@main/" + clean;
   } else {
-    // data: URI navigates Safari into Calendar Add Event more reliably than blob+download.
+    // data: URI — Safari Add Event path when no hosted file yet.
     apple.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(buildIcs());
   }
 
