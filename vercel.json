@@ -1,14 +1,15 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/add/:slug", "destination": "/api/event?slug=:slug" },
+    { "source": "/add/:slug", "destination": "/api/add?slug=:slug" },
     { "source": "/go/:slug", "destination": "/api/go?slug=:slug" }
   ],
   "headers": [
     {
-      "source": "/api/event",
+      "source": "/e/(.*).ics",
       "headers": [
-        { "key": "Content-Type", "value": "text/calendar; charset=utf-8" }
+        { "key": "Content-Type", "value": "text/calendar; charset=utf-8" },
+        { "key": "Content-Disposition", "value": "inline; filename=\"$1.ics\"" }
       ]
     }
   ]
